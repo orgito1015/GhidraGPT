@@ -31,6 +31,7 @@ import ghidra.program.model.listing.Variable;
 import ghidra.program.model.listing.VariableStorage;
 import ghidragpt.ui.Console;
 import ghidragpt.service.APIClient;
+import ghidragpt.config.ConfigurationManager;
 import ghidragpt.utils.PromptBuilder;
 import ghidragpt.utils.ResponseParser;
 import ghidragpt.utils.GhidraFunctionModifier;
@@ -58,14 +59,16 @@ public class FunctionRewrite {
     private final DecompInterface decompiler;
     private final APIClient apiClient;
     private final Console console;
+    private final ConfigurationManager configManager;
     private final PromptBuilder promptBuilder;
     private final ResponseParser responseParser;
     private final ObjectMapper objectMapper;
     private GhidraFunctionModifier functionModifier;
     
-    public FunctionRewrite(APIClient apiClient, Console console) {
+    public FunctionRewrite(APIClient apiClient, Console console, ConfigurationManager configManager) {
         this.apiClient = apiClient;
         this.console = console;
+        this.configManager = configManager;
         this.decompiler = new DecompInterface();
         DecompileOptions options = new DecompileOptions();
         decompiler.setOptions(options);
@@ -430,7 +433,15 @@ public class FunctionRewrite {
         prompt.append("- For addresses in comments, use hex format like '0x1400010a0'\n");
         prompt.append("- Only include fields that need changes - omit empty objects\n");
         prompt.append("- Function prototype should be a complete C function signature\n");
-        
+
+        // Append user-defined custom prompt suffix if set
+        if (configManager != null) {
+            String suffix = configManager.getCustomPromptSuffix();
+            if (suffix != null && !suffix.isEmpty()) {
+                prompt.append("\n").append(suffix).append("\n");
+            }
+        }
+
         return prompt.toString();
     }
     
@@ -610,7 +621,10 @@ public class FunctionRewrite {
         
         try {
             // 1. Apply function rename first
-            if (spec.functionName != null && !spec.functionName.equals(function.getName())) {
+            // When "only rename FUN_* functions" is enabled, skip renaming manually-named functions.
+            boolean onlyRenameFunPrefix = configManager != null && configManager.isRewriteOnlyFunPrefix();
+            boolean canRenameFunction = !onlyRenameFunPrefix || function.getName().startsWith("FUN_");
+            if (canRenameFunction && spec.functionName != null && !spec.functionName.equals(function.getName())) {
                 try {
                     function.setName(spec.functionName, SourceType.USER_DEFINED);
                     result.newFunctionName = spec.functionName;
@@ -619,6 +633,8 @@ public class FunctionRewrite {
                 } catch (DuplicateNameException | InvalidInputException e) {
                     result.errors.add("Failed to rename function to " + spec.functionName + ": " + e.getMessage());
                 }
+            } else if (!canRenameFunction && spec.functionName != null) {
+                result.errors.add("Function rename skipped because only auto-named (FUN_*) functions are configured for renaming. Suggested name was: " + spec.functionName);
             }
             
             // 2. Apply function prototype if specified
@@ -977,7 +993,10 @@ public class FunctionRewrite {
         
         try {
             // Apply function rename first
-            if (suggestions.functionName != null && !suggestions.functionName.equals(function.getName())) {
+            // When "only rename FUN_* functions" is enabled, skip renaming manually-named functions.
+            boolean onlyRenameFunPrefix = configManager != null && configManager.isRewriteOnlyFunPrefix();
+            boolean canRenameFunction = !onlyRenameFunPrefix || function.getName().startsWith("FUN_");
+            if (canRenameFunction && suggestions.functionName != null && !suggestions.functionName.equals(function.getName())) {
                 try {
                     function.setName(suggestions.functionName, SourceType.USER_DEFINED);
                     result.newFunctionName = suggestions.functionName;

@@ -12,6 +12,7 @@ import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolTable;
 import ghidra.util.Msg;
 import ghidra.util.task.TaskMonitor;
+import ghidragpt.config.ConfigurationManager;
 import ghidragpt.ui.Console;
 
 import java.io.IOException;
@@ -26,12 +27,14 @@ public class CodeAnalysis {
     private final DecompInterface decompiler;
     private final FunctionRewrite functionRewriteService;
     private final Console console;
+    private final ConfigurationManager configManager;
     
-    public CodeAnalysis(APIClient apiClient, Console console) {
+    public CodeAnalysis(APIClient apiClient, Console console, ConfigurationManager configManager) {
         this.apiClient = apiClient;
         this.console = console;
+        this.configManager = configManager;
         this.decompiler = new DecompInterface();
-        this.functionRewriteService = new FunctionRewrite(apiClient, console);
+        this.functionRewriteService = new FunctionRewrite(apiClient, console, configManager);
     }
     
     public void initializeDecompiler(Program program) {
@@ -224,6 +227,76 @@ public class CodeAnalysis {
             return "Error: " + e.getMessage();
         }
     }
+
+    /**
+     * Ask a custom question about the function, providing the decompiled code as context.
+     * The answer is streamed to the console.
+     */
+    public String askAboutFunction(Function function, Program program, String question, TaskMonitor monitor) {
+        try {
+            initializeDecompiler(program);
+            DecompileResults results = decompiler.decompileFunction(function, 10, monitor);
+            if (results == null || !results.decompileCompleted()) {
+                return "Failed to decompile function: " + function.getName();
+            }
+
+            String decompiledCode = results.getDecompiledFunction().getC();
+
+            if (!isServiceConfigured()) {
+                return createConfigurationError();
+            }
+
+            String prompt = buildAskPrompt(decompiledCode, function.getName(), question);
+            try {
+                long startTime = System.currentTimeMillis();
+                APIClient.GPTProvider provider = apiClient.getProvider();
+                if (console != null) {
+                    console.printAnalysisHeader("? Ask about Function", function.getName(),
+                        provider.toString(), apiClient.getModel(), prompt.length());
+                }
+
+                String response = apiClient.sendRequest(prompt, new APIClient.StreamCallback() {
+                    private boolean isFirstResponse = true;
+
+                    @Override
+                    public void onPartialResponse(String partialContent) {
+                        if (isFirstResponse) {
+                            if (console != null) {
+                                console.printStreamHeader();
+                            }
+                            isFirstResponse = false;
+                        }
+                        if (console != null) {
+                            console.appendStreamingText(partialContent);
+                        }
+                    }
+
+                    @Override
+                    public void onComplete(String fullContent) {
+                        long duration = System.currentTimeMillis() - startTime;
+                        if (console != null) {
+                            console.printStreamComplete("ask about function", duration, fullContent.length());
+                        }
+                    }
+
+                    @Override
+                    public void onError(Exception error) {
+                        if (console != null) {
+                            console.printStreamError("ask about function", error.getMessage());
+                        }
+                    }
+                });
+
+                return response;
+            } catch (IOException e) {
+                return "API Error: " + e.getMessage();
+            }
+
+        } catch (Exception e) {
+            Msg.error(this, "Error asking about function: " + e.getMessage(), e);
+            return "Error: " + e.getMessage();
+        }
+    }
     
     // Helper methods for configuration and error handling
     private boolean isServiceConfigured() {
@@ -260,10 +333,23 @@ public class CodeAnalysis {
         
         return status.toString();
     }
+
+    /**
+     * Appends the user-defined custom prompt suffix (if any) to a prompt.
+     */
+    private String appendCustomSuffix(String prompt) {
+        if (configManager != null) {
+            String suffix = configManager.getCustomPromptSuffix();
+            if (suffix != null && !suffix.isEmpty()) {
+                return prompt + "\n\n" + suffix;
+            }
+        }
+        return prompt;
+    }
     
     // Prompt building methods
     private String buildVulnerabilityPrompt(String code, String contextInfo) {
-        return "SECURITY ANALYSIS - Find REAL, EXPLOITABLE vulnerabilities only:\n\n" +
+        String base = "SECURITY ANALYSIS - Find REAL, EXPLOITABLE vulnerabilities only:\n\n" +
                "Context: " + contextInfo + "\n\n" +
                "Code:\n" + code + "\n\n" +
                "STRICT CRITERIA - Only report vulnerabilities that are:\n" +
@@ -289,10 +375,11 @@ public class CodeAnalysis {
                " [Specific line/function]\n\n" +
                "If no real vulnerabilities found, respond: \"[√] No exploitable vulnerabilities detected.\" " +
                "with no extra details";
+        return appendCustomSuffix(base);
     }
     
     private String buildExplanationPrompt(String code, String functionName) {
-        return "CONCISE FUNCTION ANALYSIS for: " + functionName + "\n\n" +
+        String base = "CONCISE FUNCTION ANALYSIS for: " + functionName + "\n\n" +
                "Code:\n" + code + "\n\n" +
                "Provide a BRIEF, focused explanation in this format:\n\n" +
                "[•] Purpose\n" +
@@ -302,5 +389,13 @@ public class CodeAnalysis {
                "[◦] Key Details\n" +
                "[Important parameters, return values, or notable behavior]\n\n" +
                "Keep it under 150 words total unless needed. Focus on WHAT and HOW, not line-by-line details.";
+        return appendCustomSuffix(base);
+    }
+
+    private String buildAskPrompt(String code, String functionName, String question) {
+        String base = "Function: " + functionName + "\n\n" +
+               "Decompiled code:\n" + code + "\n\n" +
+               "Question: " + question;
+        return appendCustomSuffix(base);
     }
 }

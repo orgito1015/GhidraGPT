@@ -26,7 +26,9 @@ public class ConfigurationPanel extends JPanel {
     private final JSpinner timeoutSpinner;
     private final JButton testButton;
     private final JLabel statusLabel;
-    
+    private final JCheckBox rewriteOnlyFunPrefixCheckbox;
+    private final JTextArea customPromptSuffixArea;
+
     public ConfigurationPanel(APIClient apiClient) {
         this.apiClient = apiClient;
         this.configManager = new ConfigurationManager();
@@ -108,7 +110,27 @@ public class ConfigurationPanel extends JPanel {
         timeoutSpinner = new JSpinner(new SpinnerNumberModel(APIClient.DEFAULT_TIMEOUT_SECONDS, 5, 300, 5));
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL;
         add(timeoutSpinner, gbc);
-        
+
+        // Only rename FUN_* functions checkbox
+        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.HORIZONTAL;
+        rewriteOnlyFunPrefixCheckbox = new JCheckBox("Only rename auto-named functions (FUN_*)");
+        rewriteOnlyFunPrefixCheckbox.setToolTipText(
+            "When checked, function renaming is skipped for functions you have already renamed manually.");
+        add(rewriteOnlyFunPrefixCheckbox, gbc);
+
+        // Custom Prompt Suffix
+        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.WEST;
+        add(new JLabel("Custom Prompt Suffix:"), gbc);
+
+        customPromptSuffixArea = new JTextArea(3, 30);
+        customPromptSuffixArea.setLineWrap(true);
+        customPromptSuffixArea.setWrapStyleWord(true);
+        customPromptSuffixArea.setToolTipText("Optional text appended to every prompt sent to the AI (e.g. \"Use camelCase for names.\")");
+        JScrollPane promptScrollPane = new JScrollPane(customPromptSuffixArea);
+        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 2; gbc.fill = GridBagConstraints.HORIZONTAL;
+        add(promptScrollPane, gbc);
+
         // Create button panel to center buttons horizontally
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
         
@@ -123,7 +145,7 @@ public class ConfigurationPanel extends JPanel {
         buttonPanel.add(saveButton);
         
         // Add centered button panel
-        gbc.gridx = 0; gbc.gridy = 7; gbc.gridwidth = 2;
+        gbc.gridx = 0; gbc.gridy = 10; gbc.gridwidth = 2;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.anchor = GridBagConstraints.CENTER;
         gbc.insets = new Insets(10, 5, 5, 5);
@@ -133,7 +155,7 @@ public class ConfigurationPanel extends JPanel {
         // Status label
         statusLabel = new JLabel("Not configured");
         statusLabel.setForeground(Color.RED);
-        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 2;
+        gbc.gridx = 0; gbc.gridy = 11; gbc.gridwidth = 2;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.anchor = GridBagConstraints.CENTER;
         gbc.insets = new Insets(5, 5, 10, 5);
@@ -143,7 +165,7 @@ public class ConfigurationPanel extends JPanel {
         // Vertical spacer to push everything to the top when panel height increases
         JPanel spacer = new JPanel();
         spacer.setOpaque(false);
-        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 2;
+        gbc.gridx = 0; gbc.gridy = 12; gbc.gridwidth = 2;
         gbc.fill = GridBagConstraints.BOTH;
         gbc.weighty = 1.0; // Take up all extra vertical space
         gbc.weightx = 1.0; // Take up all extra horizontal space
@@ -167,6 +189,8 @@ public class ConfigurationPanel extends JPanel {
         maxTokensSpinner.setValue(configManager.getMaxTokens());
         temperatureSpinner.setValue(configManager.getTemperature());
         timeoutSpinner.setValue(configManager.getTimeoutSeconds());
+        rewriteOnlyFunPrefixCheckbox.setSelected(configManager.isRewriteOnlyFunPrefix());
+        customPromptSuffixArea.setText(configManager.getCustomPromptSuffix());
         
         // Update visibility of custom URL field
         APIClient.GPTProvider provider = configManager.getProvider();
@@ -272,6 +296,8 @@ public class ConfigurationPanel extends JPanel {
         configManager.setMaxTokens((Integer) maxTokensSpinner.getValue());
         configManager.setTemperature((Double) temperatureSpinner.getValue());
         configManager.setTimeoutSeconds((Integer) timeoutSpinner.getValue());
+        configManager.setRewriteOnlyFunPrefix(rewriteOnlyFunPrefixCheckbox.isSelected());
+        configManager.setCustomPromptSuffix(customPromptSuffixArea.getText().trim());
         configManager.saveConfiguration();
         
         // Apply to GPT service

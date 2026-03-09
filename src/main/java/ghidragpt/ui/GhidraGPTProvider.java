@@ -96,6 +96,7 @@ public class GhidraGPTProvider extends ComponentProvider {
         createEnhanceFunctionAction();
         createExplainAction();
         createVulnerabilityAction();
+        createAskAction();
     }
 
     private void createEnhanceFunctionAction() {
@@ -153,6 +154,25 @@ public class GhidraGPTProvider extends ComponentProvider {
         explainAction.setDescription("Get detailed explanation of function behavior");
 
         plugin.getTool().addAction(explainAction);
+    }
+
+    private void createAskAction() {
+        DockingAction askAction = new DockingAction("Ask about this Function", getName()) {
+            @Override
+            public void actionPerformed(ActionContext context) {
+                askAboutFunctionFromContext(context);
+            }
+
+            @Override
+            public boolean isEnabledForContext(ActionContext context) {
+                return isValidFunctionContext(context);
+            }
+        };
+
+        askAction.setPopupMenuData(new MenuData(new String[] { "GhidraGPT", "Ask about this Function" }, null, "d"));
+        askAction.setDescription("Ask a custom question about the selected function");
+
+        plugin.getTool().addAction(askAction);
     }
 
     private boolean isValidFunctionContext(ActionContext context) {
@@ -327,6 +347,48 @@ public class GhidraGPTProvider extends ComponentProvider {
                 (f, p, monitor) -> analysisService.explainFunction(f, p, monitor));
     }
 
+    private void askAboutFunctionFromContext(ActionContext context) {
+        Function function = getFunctionFromContext(context);
+        Program program = getProgramFromContext(context);
+
+        if (function == null) {
+            Msg.showError(this, getComponent(), "Error", "No function selected");
+            return;
+        }
+
+        if (!configPanel.isConfigured()) {
+            Msg.showError(this, getComponent(), "Error", "Please configure API settings first");
+            showConfigurationTab();
+            return;
+        }
+
+        // Show question input dialog
+        JTextArea questionArea = new JTextArea(6, 50);
+        questionArea.setLineWrap(true);
+        questionArea.setWrapStyleWord(true);
+        JScrollPane scrollPane = new JScrollPane(questionArea);
+        scrollPane.setPreferredSize(new Dimension(500, 120));
+
+        int result = JOptionPane.showConfirmDialog(
+            getComponent(),
+            scrollPane,
+            "Ask about " + function.getName(),
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE);
+
+        if (result != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        String question = questionArea.getText().trim();
+        if (question.isEmpty()) {
+            return;
+        }
+
+        executeAnalysisWithContext("Asking about function...", function, program,
+                (f, p, monitor) -> analysisService.askAboutFunction(f, p, question, monitor));
+    }
+
     private void executeAnalysis(String taskName, AnalysisTask task) {
         Function function = getCurrentFunction();
         if (function == null) {
@@ -425,7 +487,7 @@ public class GhidraGPTProvider extends ComponentProvider {
         if (analysisService != null) {
             analysisService.dispose();
         }
-        analysisService = new CodeAnalysis(plugin.getGPTService(), console);
+        analysisService = new CodeAnalysis(plugin.getGPTService(), console, configPanel.getConfigurationManager());
         analysisService.initializeDecompiler(program);
     }
 

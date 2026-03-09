@@ -22,7 +22,9 @@ public class ConfigurationManager {
     private static final String TEMPERATURE_PROPERTY = "api.temperature";
     private static final String TIMEOUT_PROPERTY = "api.timeout.seconds";
     private static final String CUSTOM_API_URL_PROPERTY = "api.custom.url";
-    
+    private static final String REWRITE_ONLY_FUN_PREFIX_PROPERTY = "rewrite.only.fun.prefix";
+    private static final String CUSTOM_PROMPT_SUFFIX_PROPERTY = "custom.prompt.suffix";
+
     // XOR key for API key obfuscation, not super secure but still better than plaintext
     private static final String XOR_KEY = "GhidraGPT_Sec3@Key_9f4e7a2b#8c1d6f0a@2025!";
     
@@ -232,7 +234,35 @@ public class ConfigurationManager {
     public void setCustomApiUrl(String customApiUrl) {
         properties.setProperty(CUSTOM_API_URL_PROPERTY, customApiUrl != null ? customApiUrl : "");
     }
-    
+
+    /**
+     * Gets whether function renaming should only apply to auto-named (FUN_*) functions
+     */
+    public boolean isRewriteOnlyFunPrefix() {
+        return Boolean.parseBoolean(properties.getProperty(REWRITE_ONLY_FUN_PREFIX_PROPERTY, "false"));
+    }
+
+    /**
+     * Sets whether function renaming should only apply to auto-named (FUN_*) functions
+     */
+    public void setRewriteOnlyFunPrefix(boolean value) {
+        properties.setProperty(REWRITE_ONLY_FUN_PREFIX_PROPERTY, String.valueOf(value));
+    }
+
+    /**
+     * Gets optional text appended to every prompt sent to the AI
+     */
+    public String getCustomPromptSuffix() {
+        return properties.getProperty(CUSTOM_PROMPT_SUFFIX_PROPERTY, "");
+    }
+
+    /**
+     * Sets optional text appended to every prompt sent to the AI
+     */
+    public void setCustomPromptSuffix(String suffix) {
+        properties.setProperty(CUSTOM_PROMPT_SUFFIX_PROPERTY, suffix != null ? suffix : "");
+    }
+
     /**
      * Gets the configuration file path for debugging
      */
